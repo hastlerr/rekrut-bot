@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 	"encoding/json"
+	"io/ioutil"
 )
 
 var (
@@ -45,11 +46,13 @@ func main() {
 
 		switch update.Message.Command() {
 		case "vacancies":
-			var vacancies []Vacancy
-			getVacancies(baseUrl + "api/v1/vacancies.json?page=1", vacancies)
-			log.Print(vacancies)
-
-			for _, vacancy := range vacancies {
+			vacancies, err := getVacancies("https://rekrut-smarty.herokuapp.com/api/v1/vacancies.json?page=1")
+			if err != nil {
+				reply = err.Error()
+				break
+			}
+			log.Print(len(*vacancies))
+			for _, vacancy := range *vacancies {
 				reply += vacancy.toString() + "\n\n\n"
 			}
 
@@ -58,6 +61,9 @@ func main() {
 
 		case "help":
 			reply = HelpMsg
+
+		case "start":
+			reply = "Добро пожаловать" + update.Message.Chat.UserName
 
 		default:
 			reply = "Данной команды нет"
@@ -68,14 +74,30 @@ func main() {
 	}
 }
 
-func getVacancies(url string, target interface{}) error {
+func getVacancies(url string) (*[]Vacancy, error) {
 	r, err := myClient.Get(url)
 	if err != nil {
-		return err
+		return nil,err
 	}
+
+	b, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Fatal(err)
+		return nil,err
+	}
+
+	log.Printf("%s", b)
 	defer r.Body.Close()
 
-	return json.Unmarshal([]byte(r), target)
+	var result Result
+	json.Unmarshal([]byte(b), &result)
+	log.Print(len(result.vacancies))
+
+	return &result.vacancies, nil
+}
+
+type Result struct {
+	vacancies []Vacancy
 }
 
 type Vacancy struct {
