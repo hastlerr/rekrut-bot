@@ -10,12 +10,12 @@ import (
 )
 
 var (
-	myClient = &http.Client{Timeout: 10 * time.Second}
-	baseUrl = "https://rekrut-smarty.herokuapp.com/"
+	myClient         = &http.Client{Timeout: 10 * time.Second}
+	baseUrl          = "https://rekrut-smarty.herokuapp.com/"
 	telegramBotToken = "500044653:AAGOcDZBcSA_dMMhDz4KhguNTBKwNktHbmI"
-	HelpMsg    = "Это бот для получения вакансий. Он стучится на rekrut.kg и высирает вакансии " +
+	HelpMsg          = "Это бот для получения вакансий. Он стучится на rekrut.kg и высирает вакансии " +
 		"Список доступных комманд:\n" +
-		"/vacancies - выдаст список вакансий\n" +
+		"/Vacancies - выдаст список вакансий\n" +
 		"/help - отобразить это сообщение\n" +
 		"\n"
 )
@@ -51,10 +51,12 @@ func main() {
 				reply = err.Error()
 				break
 			}
-			log.Print(len(*vacancies))
-			for _, vacancy := range *vacancies {
-				reply += vacancy.toString() + "\n\n\n"
+			log.Print(len(vacancies))
+			for _, vacancy := range vacancies {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, vacancy.toString())
+				bot.Send(msg)
 			}
+			reply = "Список вакансий по вашему запросу выведен"
 
 		case "vacancies_with_filter":
 			reply = "vacancies_with_filter"
@@ -74,39 +76,42 @@ func main() {
 	}
 }
 
-func getVacancies(url string) (*[]Vacancy, error) {
+func getVacancies(url string) ([]Vacancy, error) {
 	r, err := myClient.Get(url)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Fatal(err)
-		return nil,err
+		return nil, err
 	}
 
 	log.Printf("%s", b)
 	defer r.Body.Close()
 
 	var result Result
-	json.Unmarshal([]byte(b), &result)
-	log.Print(len(result.vacancies))
+	json.Unmarshal(b, &result)
+	log.Printf("%v", result)
+	log.Print(len(result.Vacancies))
 
-	return &result.vacancies, nil
+	return result.Vacancies, nil
 }
 
 type Result struct {
-	vacancies []Vacancy
+	Vacancies []Vacancy `json:"vacancies"`
+	Count     int       `json:"count"`
 }
 
 type Vacancy struct {
-	title		 	string
-	phone_numbers 	string
-	salary 			string
-	short_description string
+	Id               int    `json:"id"`
+	Title            string `json:"title"`
+	PhoneNumbers     string `json:"phone_numbers"`
+	Salary           string `json:"salary"`
+	ShortDescription string `json:"short_description"`
 }
 
-func (this Vacancy) toString() string {
-	return this.title + "\n" + this.short_description + "\n" + this.salary + "\n" + this.phone_numbers + "\n"
+func (vacancy Vacancy) toString() string {
+	return vacancy.Title + "\n" + vacancy.ShortDescription + "\n" + vacancy.Salary + "\n" + vacancy.PhoneNumbers + "\n"
 }
