@@ -14,6 +14,7 @@ var (
 	myClient         = &http.Client{Timeout: 10 * time.Second}
 	page             = map[int]int{}
 	baseUrl          = "https://rekrut-smarty.herokuapp.com/"
+	siteUrl 			= "http://rekrut.smartylab.net/#/job/"
 	telegramBotToken = "500044653:AAGOcDZBcSA_dMMhDz4KhguNTBKwNktHbmI"
 	HelpMsg          = "Это бот для получения вакансий. Он стучится на rekrut.kg и высирает вакансии " +
 		"Список доступных комманд:\n" +
@@ -114,7 +115,7 @@ func sendVacancies(currentPage int, update tgbotapi.Update, bot *tgbotapi.BotAPI
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, vacancy.toString())
 		bot.Send(msg)
 	}
-	return fmt.Sprintf("Список вакансий по вашему запросу выведен \n Страница %d", currentPage+1), numericKeyboard
+	return fmt.Sprintf("Список вакансий по вашему запросу выведен \nСтраница %d", currentPage+1), numericKeyboard
 }
 func getUserPage(userID int) int {
 	val, ok := page[userID]
@@ -159,5 +160,9 @@ type Vacancy struct {
 }
 
 func (vacancy Vacancy) toString() string {
-	return vacancy.Title + "\n" + vacancy.ShortDescription + "\n" + vacancy.Salary + "\n" + vacancy.PhoneNumbers + "\n"
+	return vacancy.Title + "\n\n" +
+		vacancy.ShortDescription + "\n" +
+		vacancy.Salary + "\n" +
+		vacancy.PhoneNumbers + "\n" +
+		fmt.Sprintf("%s/#/job/%d", siteUrl, vacancy.Id)
 }
