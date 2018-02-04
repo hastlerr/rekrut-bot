@@ -9,16 +9,26 @@ import (
 	"io/ioutil"
 )
 
+
 var (
 	myClient         = &http.Client{Timeout: 10 * time.Second}
+	page = map[string]int { }
 	baseUrl          = "https://rekrut-smarty.herokuapp.com/"
 	telegramBotToken = "500044653:AAGOcDZBcSA_dMMhDz4KhguNTBKwNktHbmI"
 	HelpMsg          = "Это бот для получения вакансий. Он стучится на rekrut.kg и высирает вакансии " +
 		"Список доступных комманд:\n" +
-		"/Vacancies - выдаст список вакансий\n" +
+		"/vacancies - выдаст список вакансий\n" +
 		"/help - отобразить это сообщение\n" +
 		"\n"
 )
+
+var numericKeyboard = tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton("Предыдущая страница"),
+		tgbotapi.NewKeyboardButton("Следующая страница"),
+	),
+)
+
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI(telegramBotToken)
@@ -42,11 +52,12 @@ func main() {
 			continue
 		}
 
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		var userName = update.Message.From.UserName
+		log.Printf("[%s] %s", userName , update.Message.Text)
 
 		switch update.Message.Command() {
 		case "vacancies":
-			vacancies, err := getVacancies("https://rekrut-smarty.herokuapp.com/api/v1/vacancies.json?page=1")
+			vacancies, err := getVacancies("https://rekrut-smarty.herokuapp.com/api/v1/vacancies.json?page=" + string(page[userName]))
 			if err != nil {
 				reply = err.Error()
 				break
@@ -56,7 +67,12 @@ func main() {
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, vacancy.toString())
 				bot.Send(msg)
 			}
-			reply = "Список вакансий по вашему запросу выведен"
+			page[userName] += 1
+			log.Printf("ssssss")
+			log.Printf(string(len(page)))
+
+
+			reply = "Список вакансий по вашему запросу выведен \n Страница " + string(page[userName])
 
 		case "vacancies_with_filter":
 			reply = "vacancies_with_filter"
@@ -64,14 +80,17 @@ func main() {
 		case "help":
 			reply = HelpMsg
 
+
 		case "start":
-			reply = "Добро пожаловать" + update.Message.Chat.UserName
+			page[userName] = 1
+			reply = "Добро пожаловать " + update.Message.Chat.UserName
 
 		default:
 			reply = "Данной команды нет"
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
+		msg.ReplyMarkup = numericKeyboard
 		bot.Send(msg)
 	}
 }
