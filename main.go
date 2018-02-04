@@ -7,12 +7,12 @@ import (
 	"time"
 	"encoding/json"
 	"io/ioutil"
+	"fmt"
 )
-
 
 var (
 	myClient         = &http.Client{Timeout: 10 * time.Second}
-	page = map[string]int { }
+	page             = map[int]int{}
 	baseUrl          = "https://rekrut-smarty.herokuapp.com/"
 	telegramBotToken = "500044653:AAGOcDZBcSA_dMMhDz4KhguNTBKwNktHbmI"
 	HelpMsg          = "Это бот для получения вакансий. Он стучится на rekrut.kg и высирает вакансии " +
@@ -22,13 +22,17 @@ var (
 		"\n"
 )
 
-var numericKeyboard = tgbotapi.NewReplyKeyboard(
-	tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton("Предыдущая страница"),
-		tgbotapi.NewKeyboardButton("Следующая страница"),
-	),
+const (
+	nextPage     = "Следующая страница"
+	previousPage = "Предыдущая страница"
 )
 
+var numericKeyboard = tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(previousPage),
+		tgbotapi.NewKeyboardButton(nextPage),
+	),
+)
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI(telegramBotToken)
@@ -47,51 +51,77 @@ func main() {
 
 	for update := range updates {
 		reply := ""
+		var replyMarkup interface{}
 
 		if update.Message == nil {
 			continue
 		}
 
-		var userName = update.Message.From.UserName
-		log.Printf("[%s] %s", userName , update.Message.Text)
+		var userName = update.Message.From.ID
+		log.Printf("[%d] %s", userName, update.Message.Text)
+
+		log.Printf("Command: %s", update.Message.Command())
 
 		switch update.Message.Command() {
 		case "vacancies":
-			vacancies, err := getVacancies("https://rekrut-smarty.herokuapp.com/api/v1/vacancies.json?page=" + string(page[userName]))
-			if err != nil {
-				reply = err.Error()
-				break
-			}
-			log.Print(len(vacancies))
-			for _, vacancy := range vacancies {
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, vacancy.toString())
-				bot.Send(msg)
-			}
-			page[userName] += 1
-			log.Printf("ssssss")
-			log.Printf(string(len(page)))
-
-
-			reply = "Список вакансий по вашему запросу выведен \n Страница " + string(page[userName])
-
+			reply, replyMarkup = sendVacancies(0, update, bot)
 		case "vacancies_with_filter":
 			reply = "vacancies_with_filter"
 
 		case "help":
 			reply = HelpMsg
 
-
 		case "start":
 			page[userName] = 1
-			reply = "Добро пожаловать " + update.Message.Chat.UserName
+			name := update.Message.From.UserName
+			if update.Message.From.FirstName != "" {
+				name = update.Message.From.FirstName
+			}
+			reply = "Добро пожаловать " + name
+			replyMarkup = tgbotapi.NewHideKeyboard(true)
 
 		default:
-			reply = "Данной команды нет"
+			switch update.Message.Text {
+			case nextPage:
+				currentPage := getUserPage(userName)
+				page[userName] = currentPage + 1
+				reply, replyMarkup = sendVacancies(page[userName], update, bot)
+			case previousPage:
+				currentPage := getUserPage(userName)
+				if currentPage != 0 {
+					page[userName] = currentPage - 1
+					reply, replyMarkup = sendVacancies(page[userName], update, bot)
+				} else {
+					reply = "Невозможно показать предыдущую страницу"
+				}
+			default:
+				reply = "Данной команды нет"
+			}
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
-		msg.ReplyMarkup = numericKeyboard
+		msg.ReplyMarkup = replyMarkup
 		bot.Send(msg)
+	}
+}
+func sendVacancies(currentPage int, update tgbotapi.Update, bot *tgbotapi.BotAPI) (string, interface{}) {
+	vacancies, err := getVacancies(fmt.Sprintf("%s/api/v1/vacancies.json?page=%d", baseUrl, currentPage))
+	if err != nil {
+		return err.Error(), nil
+	}
+	log.Print(len(vacancies))
+	for _, vacancy := range vacancies {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, vacancy.toString())
+		bot.Send(msg)
+	}
+	return fmt.Sprintf("Список вакансий по вашему запросу выведен \n Страница %d", currentPage+1), numericKeyboard
+}
+func getUserPage(userID int) int {
+	val, ok := page[userID]
+	if ok {
+		return val
+	} else {
+		return 0
 	}
 }
 
@@ -107,13 +137,10 @@ func getVacancies(url string) ([]Vacancy, error) {
 		return nil, err
 	}
 
-	log.Printf("%s", b)
 	defer r.Body.Close()
 
 	var result Result
 	json.Unmarshal(b, &result)
-	log.Printf("%v", result)
-	log.Print(len(result.Vacancies))
 
 	return result.Vacancies, nil
 }
