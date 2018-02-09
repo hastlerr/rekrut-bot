@@ -12,13 +12,14 @@ import (
 
 var (
 	myClient         = &http.Client{Timeout: 10 * time.Second}
-	page             = map[int]int{}
-	baseUrl          = "https://rekrut-smarty.herokuapp.com/"
+	cache            = map[int]UserConfigurations{}
+	baseUrl          = "https://rekrut-smarty.herokuapp.com"
 	siteUrl          = "http://rekrut.smartylab.net"
 	telegramBotToken = "500044653:AAGOcDZBcSA_dMMhDz4KhguNTBKwNktHbmI"
 	HelpMsg          = "Это бот для получения вакансий. Он стучится на rekrut.kg и высирает вакансии " +
 		"Список доступных комманд:\n" +
 		"/vacancies - выдаст список вакансий\n" +
+		"/vacancies_with_filter - позволит отфильтровать вывод вакансий\n" +
 		"/help - отобразить это сообщение\n" +
 		"\n"
 )
@@ -26,14 +27,26 @@ var (
 const (
 	nextPage     = "Следующая страница"
 	previousPage = "Предыдущая страница"
+	textSearch   = "Текстовый поиск"
+	filterSearch = "Поиск по фильтру"
+
 )
 
-var numericKeyboard = tgbotapi.NewReplyKeyboard(
+var paginationKeyboard = tgbotapi.NewReplyKeyboard(
 	tgbotapi.NewKeyboardButtonRow(
 		tgbotapi.NewKeyboardButton(previousPage),
 		tgbotapi.NewKeyboardButton(nextPage),
 	),
+
 )
+
+var searchType = tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(textSearch),
+		tgbotapi.NewKeyboardButton(filterSearch),
+	),
+)
+
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI(telegramBotToken)
@@ -58,22 +71,23 @@ func main() {
 			continue
 		}
 
-		var userName = update.Message.From.ID
-		log.Printf("[%d] %s", userName, update.Message.Text)
-
+		var userID = update.Message.From.ID
+		log.Printf("[%d] %s", userID, update.Message.Text)
 		log.Printf("Command: %s", update.Message.Command())
 
 		switch update.Message.Command() {
 		case "vacancies":
-			reply, replyMarkup = sendVacancies(0, update, bot)
+			reply, replyMarkup = sendVacancies(1, update, bot, cache[userID])
 		case "vacancies_with_filter":
-			reply = "vacancies_with_filter"
+			reply = "Выберите тип фильтрации"
+			replyMarkup = searchType
 
 		case "help":
 			reply = HelpMsg
 
 		case "start":
-			page[userName] = 1
+
+			cache[userID] = UserConfigurations{page:1}
 			name := update.Message.From.UserName
 			if update.Message.From.FirstName != "" {
 				name = update.Message.From.FirstName
@@ -82,22 +96,42 @@ func main() {
 			replyMarkup = tgbotapi.NewHideKeyboard(true)
 
 		default:
+			user := cache[userID]
+
 			switch update.Message.Text {
+
 			case nextPage:
-				currentPage := getUserPage(userName)
-				page[userName] = currentPage + 1
-				reply, replyMarkup = sendVacancies(page[userName], update, bot)
+				user.page += 1
+				reply, replyMarkup = sendVacancies(user.page, update, bot, user)
 			case previousPage:
-				currentPage := getUserPage(userName)
-				if currentPage != 0 {
-					page[userName] = currentPage - 1
-					reply, replyMarkup = sendVacancies(page[userName], update, bot)
+				if user.page > 1 {
+					user.page -= 1
+					reply, replyMarkup = sendVacancies(user.page, update, bot, user)
 				} else {
 					reply = "Невозможно показать предыдущую страницу"
 				}
+			case textSearch:
+				reply = "Введите ключевое слово"
+				user.searchType = textSearch
+				replyMarkup = tgbotapi.NewHideKeyboard(true)
+
+			case filterSearch:
+				user.searchType = filterSearch
+				reply = "Выберите категорию"
+
 			default:
-				reply = "Данной команды нет"
+				if user.searchType == textSearch {
+					user.searchType = ""
+					user.page = 1
+					user.searchText = update.Message.Text
+					log.Printf(cache[userID].searchText)
+					reply, replyMarkup = sendVacancies(user.page, update, bot, user)
+				} else {
+					reply = "Данной команды нет"
+				}
 			}
+			cache[userID] = user
+
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
@@ -105,8 +139,15 @@ func main() {
 		bot.Send(msg)
 	}
 }
-func sendVacancies(currentPage int, update tgbotapi.Update, bot *tgbotapi.BotAPI) (string, interface{}) {
-	vacancies, err := getVacancies(fmt.Sprintf("%s/api/v1/vacancies.json?page=%d", baseUrl, currentPage))
+func sendVacancies(currentPage int, update tgbotapi.Update, bot *tgbotapi.BotAPI, user UserConfigurations) (string, interface{}) {
+
+	url := fmt.Sprintf("%s/api/v1/vacancies.json?page=%d", baseUrl, currentPage)
+	if user.searchText != ""{
+		url = fmt.Sprintf("%s&search=%s", url, user.searchText)
+		fmt.Printf(url)
+	}
+	vacancies, err := getVacancies(url)
+	fmt.Print(vacancies)
 	if err != nil {
 		return err.Error(), nil
 	}
@@ -116,16 +157,9 @@ func sendVacancies(currentPage int, update tgbotapi.Update, bot *tgbotapi.BotAPI
 		msg.ParseMode = tgbotapi.ModeMarkdown
 		bot.Send(msg)
 	}
-	return fmt.Sprintf("Список вакансий по вашему запросу выведен \nСтраница %d", currentPage+1), numericKeyboard
+	return fmt.Sprintf("Список вакансий по вашему запросу выведен \nСтраница %d", currentPage), paginationKeyboard
 }
-func getUserPage(userID int) int {
-	val, ok := page[userID]
-	if ok {
-		return val
-	} else {
-		return 0
-	}
-}
+
 
 func getVacancies(url string) ([]Vacancy, error) {
 	r, err := myClient.Get(url)
@@ -145,6 +179,17 @@ func getVacancies(url string) ([]Vacancy, error) {
 	json.Unmarshal(b, &result)
 
 	return result.Vacancies, nil
+}
+
+type UserConfigurations struct {
+	page       int
+	searchType string
+	searchText string
+	category   string
+	priceStart int
+	priceStop  int
+	isDollar   bool
+
 }
 
 type Result struct {
