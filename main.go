@@ -27,9 +27,6 @@ var (
 const (
 	nextPage     = "Следующая страница"
 	previousPage = "Предыдущая страница"
-	textSearch   = "Текстовый поиск"
-	filterSearch = "Поиск по фильтру"
-
 )
 
 var paginationKeyboard = tgbotapi.NewReplyKeyboard(
@@ -40,12 +37,12 @@ var paginationKeyboard = tgbotapi.NewReplyKeyboard(
 
 )
 
-var searchType = tgbotapi.NewReplyKeyboard(
-	tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(textSearch),
-		tgbotapi.NewKeyboardButton(filterSearch),
-	),
-)
+//var searchType = tgbotapi.NewReplyKeyboard(
+//	tgbotapi.NewKeyboardButtonRow(
+//		tgbotapi.NewKeyboardButton(textSearch),
+//		tgbotapi.NewKeyboardButton(filterSearch),
+//	),
+//)
 
 
 func main() {
@@ -72,21 +69,29 @@ func main() {
 		}
 
 		var userID = update.Message.From.ID
+		var user = cache[userID]
+
 		log.Printf("[%d] %s", userID, update.Message.Text)
 		log.Printf("Command: %s", update.Message.Command())
 
 		switch update.Message.Command() {
 		case "vacancies":
-			reply, replyMarkup = sendVacancies(1, update, bot, cache[userID])
+			if update.Message.CommandArguments() == ""{
+				reply, replyMarkup = sendVacancies(user, update, bot)
+			} else {
+				user.page = 1
+				user.searchText = update.Message.CommandArguments()
+				log.Printf(cache[userID].searchText)
+				reply, replyMarkup = sendVacancies(user, update, bot)
+			}
 		case "vacancies_with_filter":
 			reply = "Выберите тип фильтрации"
-			replyMarkup = searchType
+			//replyMarkup = searchType
 
 		case "help":
 			reply = HelpMsg
 
 		case "start":
-
 			cache[userID] = UserConfigurations{page:1}
 			name := update.Message.From.UserName
 			if update.Message.From.FirstName != "" {
@@ -96,56 +101,40 @@ func main() {
 			replyMarkup = tgbotapi.NewHideKeyboard(true)
 
 		default:
-			user := cache[userID]
-
+			// Обработка кнопок
 			switch update.Message.Text {
-
 			case nextPage:
 				user.page += 1
-				reply, replyMarkup = sendVacancies(user.page, update, bot, user)
+				reply, replyMarkup = sendVacancies(user, update, bot)
 			case previousPage:
 				if user.page > 1 {
 					user.page -= 1
-					reply, replyMarkup = sendVacancies(user.page, update, bot, user)
+					reply, replyMarkup = sendVacancies(user, update, bot)
 				} else {
 					reply = "Невозможно показать предыдущую страницу"
 				}
-			case textSearch:
-				reply = "Введите ключевое слово"
-				user.searchType = textSearch
-				replyMarkup = tgbotapi.NewHideKeyboard(true)
-
-			case filterSearch:
-				user.searchType = filterSearch
-				reply = "Выберите категорию"
 
 			default:
-				if user.searchType == textSearch {
-					user.searchType = ""
-					user.page = 1
-					user.searchText = update.Message.Text
-					log.Printf(cache[userID].searchText)
-					reply, replyMarkup = sendVacancies(user.page, update, bot, user)
-				} else {
-					reply = "Данной команды нет"
-				}
+				reply = "Данной команды нет"
 			}
-			cache[userID] = user
 
 		}
-
+		cache[userID] = user
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
 		msg.ReplyMarkup = replyMarkup
 		bot.Send(msg)
 	}
 }
-func sendVacancies(currentPage int, update tgbotapi.Update, bot *tgbotapi.BotAPI, user UserConfigurations) (string, interface{}) {
 
-	url := fmt.Sprintf("%s/api/v1/vacancies.json?page=%d", baseUrl, currentPage)
+// Helper
+
+func sendVacancies(user UserConfigurations, update tgbotapi.Update, bot *tgbotapi.BotAPI) (string, interface{}) {
+
+	var url = fmt.Sprintf("%s/api/v1/vacancies.json?page=%d", baseUrl, user.page)
 	if user.searchText != ""{
 		url = fmt.Sprintf("%s&search=%s", url, user.searchText)
-		fmt.Printf(url)
 	}
+	fmt.Println(url)
 	vacancies, err := getVacancies(url)
 	fmt.Print(vacancies)
 	if err != nil {
@@ -157,7 +146,7 @@ func sendVacancies(currentPage int, update tgbotapi.Update, bot *tgbotapi.BotAPI
 		msg.ParseMode = tgbotapi.ModeMarkdown
 		bot.Send(msg)
 	}
-	return fmt.Sprintf("Список вакансий по вашему запросу выведен \nСтраница %d", currentPage), paginationKeyboard
+	return fmt.Sprintf("Список вакансий по вашему запросу выведен \nСтраница %d", user.page), paginationKeyboard
 }
 
 
@@ -181,9 +170,12 @@ func getVacancies(url string) ([]Vacancy, error) {
 	return result.Vacancies, nil
 }
 
+
+// Model
+
 type UserConfigurations struct {
 	page       int
-	searchType string
+	isFilterSearch bool
 	searchText string
 	category   string
 	priceStart int
@@ -204,6 +196,9 @@ type Vacancy struct {
 	Salary           string `json:"salary"`
 	ShortDescription string `json:"short_description"`
 }
+
+
+// Extension
 
 func (vacancy Vacancy) toString() string {
 	return fmt.Sprintf("*%s*\n" +
