@@ -25,8 +25,19 @@ var (
 )
 
 const (
+	// Pagination
 	nextPage     = "Следующая страница"
 	previousPage = "Предыдущая страница"
+	// Parameters
+	category	 = "Категория"
+	workTime	 = "Рабочий график"
+	vilka	 = "Вилка"
+	//Categories
+	it = "Айти"
+	gos = "Гос"
+	//Work time
+	fullTime = "Полный рабочий день"
+	partTime = "Не полный рабочий день"
 )
 
 var paginationKeyboard = tgbotapi.NewReplyKeyboard(
@@ -37,15 +48,29 @@ var paginationKeyboard = tgbotapi.NewReplyKeyboard(
 
 )
 
-//var searchType = tgbotapi.NewReplyKeyboard(
-//	tgbotapi.NewKeyboardButtonRow(
-//		tgbotapi.NewKeyboardButton(textSearch),
-//		tgbotapi.NewKeyboardButton(filterSearch),
-//	),
-//)
+var filterParametersKeyboard = tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(category),
+		tgbotapi.NewKeyboardButton(workTime),
+		tgbotapi.NewKeyboardButton(vilka),
+	),
+)
 
+var categoriesKeyboard = tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(it),
+		tgbotapi.NewKeyboardButton(gos),
+	),
+)
 
-func main() {
+var workTimeKeyboard= tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(fullTime),
+		tgbotapi.NewKeyboardButton(partTime),
+	),
+)
+
+	func main() {
 	bot, err := tgbotapi.NewBotAPI(telegramBotToken)
 	if err != nil {
 		log.Panic(err)
@@ -84,10 +109,12 @@ func main() {
 				log.Printf(cache[userID].searchText)
 				reply, replyMarkup = sendVacancies(user, update, bot)
 			}
-		case "vacancies_with_filter":
-			reply = "Выберите тип фильтрации"
-			//replyMarkup = searchType
-
+		case "setFilter":
+			reply = "Выберите параметр фильтрации"
+			replyMarkup = filterParametersKeyboard
+		case "resetFilter":
+			reply = "Вы сбросили филтры"
+			replyMarkup = tgbotapi.NewHideKeyboard(true)
 		case "help":
 			reply = HelpMsg
 
@@ -113,6 +140,13 @@ func main() {
 				} else {
 					reply = "Невозможно показать предыдущую страницу"
 				}
+			case category:
+				reply = "Выберите категорию"
+				replyMarkup = categoriesKeyboard
+			case workTime:
+				reply = "Выберите график работы"
+				replyMarkup = workTimeKeyboard
+			case vilka:
 
 			default:
 				reply = "Данной команды нет"
@@ -178,8 +212,8 @@ type UserConfigurations struct {
 	isFilterSearch bool
 	searchText string
 	category   string
-	priceStart int
-	priceStop  int
+	salaryFrom int
+	salaryTo   int
 	isDollar   bool
 
 }
