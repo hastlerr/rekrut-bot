@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"fmt"
+	"strings"
 )
 
 var (
@@ -105,7 +106,7 @@ var workTimeKeyboard= tgbotapi.NewReplyKeyboard(
 				reply, replyMarkup = sendVacancies(user, update, bot)
 			} else {
 				user.page = 1
-				user.searchText = update.Message.CommandArguments()
+				user.searchText = fmt.Sprintf("&search=%s", update.Message.CommandArguments()[1:])
 				log.Printf(cache[userID].searchText)
 				reply, replyMarkup = sendVacancies(user, update, bot)
 			}
@@ -114,12 +115,14 @@ var workTimeKeyboard= tgbotapi.NewReplyKeyboard(
 			replyMarkup = filterParametersKeyboard
 		case "resetFilter":
 			reply = "Вы сбросили филтры"
+			user.resetFilter(userID)
 			replyMarkup = tgbotapi.NewHideKeyboard(true)
 		case "help":
 			reply = HelpMsg
 
 		case "start":
 			cache[userID] = UserConfigurations{page:1}
+			cache[userID].resetFilter(userID)
 			name := update.Message.From.UserName
 			if update.Message.From.FirstName != "" {
 				name = update.Message.From.FirstName
@@ -148,26 +151,60 @@ var workTimeKeyboard= tgbotapi.NewReplyKeyboard(
 				replyMarkup = workTimeKeyboard
 			case vilka:
 
+			case it, gos:
+				user.category = fmt.Sprintf("&category=%s", update.Message.Text)
+				sendMessage(update, bot, "Вы выбрали категорию " + update.Message.Text, tgbotapi.NewHideKeyboard(true))
+
+				reply, replyMarkup = sendVacancies(user, update, bot)
+
+			case partTime, fullTime :
+				user.workTime = fmt.Sprintf("&worktime=%s", update.Message.Text)
+				sendMessage(update, bot, "Вы выбрали " + update.Message.Text + "график", tgbotapi.NewHideKeyboard(true))
+				reply, replyMarkup = sendVacancies(user, update, bot)
+
 			default:
 				reply = "Данной команды нет"
 			}
 
 		}
 		cache[userID] = user
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
-		msg.ReplyMarkup = replyMarkup
-		bot.Send(msg)
+		sendMessage(update, bot, reply, replyMarkup)
 	}
 }
 
 // Helper
 
+func sendMessage(update tgbotapi.Update, bot *tgbotapi.BotAPI, text string, keyboard interface{})  {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ReplyMarkup = keyboard
+	bot.Send(msg)
+}
+
+func valueFromFilter(filter string) string {
+	i := strings.Index(filter, "=")
+	return filter[i+1:]
+}
+
+func getCurrentStatus(user UserConfigurations) string {
+	return fmt.Sprintf("Список вакансий по вашему запросу выведен \nСтраница %d %s \nФильтры: %s %s",
+		user.page,
+		ternary(user.searchText != "", "\nКлючевое слово: " + valueFromFilter(user.searchText), ""),
+		valueFromFilter(user.category),
+		valueFromFilter(user.workTime))
+}
+
 func sendVacancies(user UserConfigurations, update tgbotapi.Update, bot *tgbotapi.BotAPI) (string, interface{}) {
 
-	var url = fmt.Sprintf("%s/api/v1/vacancies.json?page=%d", baseUrl, user.page)
-	if user.searchText != ""{
-		url = fmt.Sprintf("%s&search=%s", url, user.searchText)
-	}
+	var url = fmt.Sprintf("%s/api/v1/vacancies.json?page=%d%s%s%s%s%s",
+		baseUrl,
+		user.page,
+		user.searchText,
+		user.category,
+		user.workTime,
+		user.salaryFrom,
+		user.salaryTo)
+
 	fmt.Println(url)
 	vacancies, err := getVacancies(url)
 	fmt.Print(vacancies)
@@ -176,11 +213,9 @@ func sendVacancies(user UserConfigurations, update tgbotapi.Update, bot *tgbotap
 	}
 	log.Print(len(vacancies))
 	for _, vacancy := range vacancies {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, vacancy.toString())
-		msg.ParseMode = tgbotapi.ModeMarkdown
-		bot.Send(msg)
+		sendMessage(update, bot, vacancy.toString(), nil)
 	}
-	return fmt.Sprintf("Список вакансий по вашему запросу выведен \nСтраница %d", user.page), paginationKeyboard
+	return getCurrentStatus(user), paginationKeyboard
 }
 
 
@@ -209,13 +244,11 @@ func getVacancies(url string) ([]Vacancy, error) {
 
 type UserConfigurations struct {
 	page       int
-	isFilterSearch bool
 	searchText string
 	category   string
-	salaryFrom int
-	salaryTo   int
-	isDollar   bool
-
+	salaryFrom string
+	salaryTo   string
+	workTime   string
 }
 
 type Result struct {
@@ -246,4 +279,20 @@ func (vacancy Vacancy) toString() string {
 		vacancy.Salary,
 		vacancy.PhoneNumbers,
 		siteUrl, vacancy.Id)
+}
+
+func (user UserConfigurations) resetFilter(userID int) {
+	user.workTime = ""
+	user.category = ""
+	user.page = 1
+	user.salaryFrom = ""
+	user.salaryTo = ""
+	cache[userID] = user
+}
+
+func ternary(statement bool, a, b interface{}) interface{} {
+	if statement {
+		return a
+	}
+	return b
 }
