@@ -19,9 +19,10 @@ var (
 	telegramBotToken = "500044653:AAGOcDZBcSA_dMMhDz4KhguNTBKwNktHbmI"
 	HelpMsg          = "Это бот для получения вакансий. Он стучится на rekrut.kg и высирает вакансии " +
 		"Список доступных комманд:\n" +
-		"/vacancies - выдаст список вакансий\n" +
-		"/vacancies_with_filter - позволит отфильтровать вывод вакансий\n" +
-		"/help - отобразить это сообщение\n" +
+		"/vacancies - Выдаст вам список вакансий, вы так же можете дописать сделать текстовый поиск, дописав ключевое слово через пробел\n" +
+		"/setfilter - Позволит выставить категорию, режим работы и вилку зароботной платы\n" +
+		"/resetfilter - Сбросит ранее веденные фильтры\n" +
+		"/help - отобразить данное сообщение\n" +
 		"\n"
 )
 
@@ -110,10 +111,10 @@ var workTimeKeyboard= tgbotapi.NewReplyKeyboard(
 				log.Printf(cache[userID].searchText)
 				reply, replyMarkup = sendVacancies(user, update, bot)
 			}
-		case "setFilter":
+		case "setfilter":
 			reply = "Выберите параметр фильтрации"
 			replyMarkup = filterParametersKeyboard
-		case "resetFilter":
+		case "resetfilter":
 			reply = "Вы сбросили филтры"
 			user.resetFilter(userID)
 			replyMarkup = tgbotapi.NewHideKeyboard(true)
